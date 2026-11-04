@@ -1,12 +1,20 @@
 /**
  * Listopadová výzva – backend (Google Apps Script)
  * Vlož do tabulky: Rozšíření → Apps Script → nahraď obsah tímto kódem.
- * 1) Změň PIN níže.
- * 2) Spusť funkci setup (vytvoří listy).
- * 3) Nasadit → Nové nasazení → Webová aplikace → Spustit jako: Já, Přístup: Kdokoli.
+ * 1) Spusť funkci setup (vytvoří listy).
+ * 2) Nasadit → Nové nasazení → Webová aplikace → Spustit jako: Já, Přístup: Kdokoli.
+ * PIN: první PIN zadaný v appce se uloží (Vlastnosti projektu → PIN).
+ * Reset PINu: spusť funkci resetPin a v appce zadej nový.
  */
 
-const PIN = 'ZMEN-MĚ'; // ← tvůj PIN, stejný zadáš v appce
+function getPin(candidate) {
+  const props = PropertiesService.getScriptProperties();
+  let pin = props.getProperty('PIN');
+  if (!pin && candidate) { props.setProperty('PIN', String(candidate)); pin = String(candidate); }
+  return pin;
+}
+
+function resetPin() { PropertiesService.getScriptProperties().deleteProperty('PIN'); }
 
 const SAMS = ['Báčis', 'Bláža', 'Dan P.', 'Fíla', 'Honza P.', 'Jáchym', 'Kamča', 'Káťa',
   'Libor', 'Mára P.', 'Martin D.', 'Martin Z.', 'Paťas', 'Pepe', 'Táda', 'Tláča'];
@@ -59,7 +67,7 @@ function doGet() {
 function doPost(e) {
   let b = {};
   try { b = JSON.parse(e.postData.contents); } catch (x) { return out({ ok: false, error: 'Neplatný požadavek' }); }
-  if (String(b.pin) !== PIN) return out({ ok: false, error: 'Špatný PIN' });
+  if (!b.pin || String(b.pin) !== getPin(b.pin)) return out({ ok: false, error: 'Špatný PIN' });
 
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
