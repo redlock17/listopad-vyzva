@@ -79,6 +79,13 @@ nav button.on{color:var(--g)}
 .toast.show{opacity:1}
 .sync{font-size:12px;color:var(--mut)}
 .sync.warn{color:var(--r)}
+.datebar{display:flex;align-items:center;gap:8px}
+.dnav{background:var(--card);border:0;color:var(--txt);width:44px;height:44px;border-radius:12px;font-size:22px;flex:none}
+.dnav:disabled{opacity:.3}
+.dmid{flex:1;text-align:center;position:relative;cursor:pointer}
+.dmid h1{margin:0}
+.dmid input{position:absolute;inset:0;opacity:0;width:100%;height:100%;min-height:0;border:0;padding:0}
+.dmid.past h1{color:var(--g)}
 .monthnav{display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px}
 .monthnav button{background:var(--card);border:0;color:var(--txt);width:40px;height:40px;border-radius:10px;font-size:18px}
 </style>
@@ -87,8 +94,13 @@ nav button.on{color:var(--g)}
 
 <!-- DNES -->
 <section id="v-dnes">
-  <div class="row"><div class="grow"><h1 id="todayTitle"></h1><div class="sync" id="sync"></div></div></div>
-  <div class="card switch"><div><b>Dnes jsem v Pitlandu</b><div class="sub">Směna podle Směny.cz</div></div><button class="tg" id="todayShift" aria-label="Směna dnes"></button></div>
+  <div class="datebar">
+    <button class="dnav" id="dPrev" aria-label="Předchozí den">‹</button>
+    <label class="dmid"><h1 id="todayTitle"></h1><span class="sub" id="dSub"></span><input type="date" id="dPick" aria-label="Vybrat datum"></label>
+    <button class="dnav" id="dNext" aria-label="Další den">›</button>
+  </div>
+  <div class="row" style="justify-content:space-between;min-height:30px"><div class="sync" id="sync"></div><button class="btn o sm hidden" id="dToday">Zpět na dnes</button></div>
+  <div class="card switch"><div><b id="shiftLabel">Dnes jsem v Pitlandu</b><div class="sub">Směna podle Směny.cz</div></div><button class="tg" id="todayShift" aria-label="Směna v tento den"></button></div>
   <div class="status">
     <div class="st" id="stO"><b>Ocenění</b><span id="cO">0</span></div>
     <div class="st" id="stF"><b>Feedback</b><span id="cF">0</span></div>
@@ -97,7 +109,7 @@ nav button.on{color:var(--g)}
     <button class="btn g" data-new="Ocenění">+ Ocenění</button>
     <button class="btn w" data-new="Feedback">+ Feedback</button>
   </div>
-  <h2>Dnešní záznamy</h2>
+  <h2 id="dayListTitle">Dnešní záznamy</h2>
   <div id="todayList"></div>
 </section>
 
@@ -189,6 +201,7 @@ let data = ls.get('data', { entries: [], shifts: [], sams: DEFAULT_SAMS });
 let queue = ls.get('queue', []);
 let cfg = ls.get('cfg', { url: '', pin: '' });
 let view = 'dnes', viewMonth = new Date(), editMode = false, filter = 'Vše';
+let selDate = iso(new Date()), openedDay = selDate;
 let form = {};
 
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2200); }
@@ -241,9 +254,18 @@ const has = (d, t) => byDate(d).some(e => e.type === t);
 function render() {
   // Dnes
   const t = today();
-  $('#todayTitle').textContent = fmt(t).replace(/^./, c => c.toUpperCase());
-  $('#todayShift').classList.toggle('on', data.shifts.includes(t));
-  const te = byDate(t);
+  if (!selDate || selDate > t) selDate = t;
+  const isToday = selDate === t, diff = Math.round((new Date(t) - new Date(selDate)) / 864e5);
+  $('#todayTitle').textContent = fmt(selDate).replace(/^./, c => c.toUpperCase());
+  $('#dSub').textContent = isToday ? 'dnes' : diff === 1 ? 'včera' : 'před ' + diff + ' dny';
+  $('.dmid').classList.toggle('past', !isToday);
+  $('#dPick').value = selDate; $('#dPick').max = t;
+  $('#dNext').disabled = isToday;
+  $('#dToday').classList.toggle('hidden', isToday);
+  $('#shiftLabel').textContent = isToday ? 'Dnes jsem v Pitlandu' : 'V tento den jsem byl v Pitlandu';
+  $('#dayListTitle').textContent = isToday ? 'Dnešní záznamy' : 'Záznamy ' + fmt(selDate);
+  $('#todayShift').classList.toggle('on', data.shifts.includes(selDate));
+  const te = byDate(selDate);
   const nO = te.filter(e => e.type === 'Ocenění').length, nF = te.filter(e => e.type === 'Feedback').length;
   $('#cO').textContent = nO ? '✓ ' + nO : '—'; $('#cF').textContent = nF ? '✓ ' + nF : '—';
   $('#stO').classList.toggle('ok', nO > 0); $('#stF').classList.toggle('ok', nF > 0);
@@ -292,7 +314,7 @@ function chips(el, items, val, cls) {
   $(el).innerHTML = items.map(i => `<button class="chip ${i === val ? (cls || 'on') : ''}" data-v="${esc(i)}">${esc(i)}</button>`).join('');
 }
 function openForm(type) {
-  const t = today();
+  const t = selDate || today();
   const lastRole = ls.get('lastRole', {});
   form = { type, date: t, sam: '', role: lastRole.date === t ? lastRole.role : '', ctx: '' };
   $('#fDate').value = t; $('#fText').value = ''; $('#fReaction').value = ''; $('#fCtxOther').value = '';
@@ -323,9 +345,10 @@ $('#formSave').onclick = () => {
     role: form.role, ctx, text: $('#fText').value.trim(), reaction: $('#fReaction').value.trim() };
   if (form.role) ls.set('lastRole', { date, role: form.role });
   push({ action: 'add', entry });
-  if (!data.shifts.includes(date) && date === today()) push({ action: 'shift', date, on: true });
-  toast(form.type + ' uloženo');
-  show('dnes');
+  if (!data.shifts.includes(date)) push({ action: 'shift', date, on: true });
+  selDate = date;
+  toast(form.type + ' uloženo · ' + fmt(date));
+  render(); show('dnes');
 };
 $('#formCancel').onclick = () => show('dnes');
 
@@ -338,7 +361,12 @@ function show(v) {
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => { editMode = false; $('#editShifts').textContent = 'Upravit směny'; $('#editHint').style.display = 'none'; render(); show(b.dataset.v); });
 document.querySelectorAll('[data-new]').forEach(b => b.onclick = () => openForm(b.dataset.new));
-$('#todayShift').onclick = () => { const t = today(); push({ action: 'shift', date: t, on: !data.shifts.includes(t) }); };
+$('#todayShift').onclick = () => { const t = selDate; push({ action: 'shift', date: t, on: !data.shifts.includes(t) }); };
+function shiftDay(n) { const [y, m, d] = selDate.split('-').map(Number); selDate = iso(new Date(y, m - 1, d + n)); render(); }
+$('#dPrev').onclick = () => shiftDay(-1);
+$('#dNext').onclick = () => shiftDay(1);
+$('#dToday').onclick = () => { selDate = today(); render(); };
+$('#dPick').onchange = ev => { if (ev.target.value) { selDate = ev.target.value; render(); } };
 document.body.addEventListener('click', ev => {
   const d = ev.target.closest('[data-del]');
   if (d && confirm('Smazat záznam?')) push({ action: 'delete', id: d.dataset.del });
@@ -349,7 +377,7 @@ $('#cal').addEventListener('click', ev => {
   const b = ev.target.closest('.day[data-d]'); if (!b) return;
   const ds = b.dataset.d;
   if (editMode) push({ action: 'shift', date: ds, on: !data.shifts.includes(ds) });
-  else { filter = 'Vše'; render(); show('zaznamy'); const h = [...document.querySelectorAll('#allList h2')].find(x => x.textContent === fmt(ds)); if (h) h.scrollIntoView(); else toast('V tento den nic'); }
+  else if (ds <= today()) { selDate = ds; render(); show('dnes'); }
 });
 $('#editShifts').onclick = () => { editMode = !editMode; $('#editShifts').textContent = editMode ? 'Hotovo' : 'Upravit směny'; $('#editHint').style.display = editMode ? 'block' : 'none'; render(); };
 $('#mPrev').onclick = () => { viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1); render(); };
@@ -362,7 +390,11 @@ $('#cfgSave').onclick = async () => {
 };
 $('#cfgReload').onclick = async () => toast(await sync() ? 'Načteno ✓' : 'Nepodařilo se načíst');
 
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); sync(); } });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (today() !== openedDay) { openedDay = today(); selDate = openedDay; } // nový den → zpět na dnešek
+  render(); sync();
+});
 render();
 if (!cfg.url) show('nast'); else sync();
 </script>
