@@ -306,27 +306,39 @@ function entryHtml(e) {
   const oc = e.type === 'Ocenění';
   return `<div class="entry ${oc ? 'oc' : ''}"><div class="h"><span><span class="tag ${oc ? 'oc' : ''}">${esc(e.type)}</span> <b>${esc(e.sam)}</b></span><span class="sub">${esc([e.role, e.ctx].filter(Boolean).join(' · '))}</span></div>
   ${e.text ? `<div class="t">${esc(e.text)}</div>` : ''}${e.reaction ? `<div class="rx">↳ ${esc(e.reaction)}</div>` : ''}
-  <div style="text-align:right;margin-top:6px"><button class="del" data-del="${esc(e.id)}">Smazat</button></div></div>`;
+  <div style="display:flex;justify-content:flex-end;gap:18px;margin-top:6px"><button class="del" data-edit="${esc(e.id)}">Upravit</button><button class="del" data-del="${esc(e.id)}">Smazat</button></div></div>`;
 }
 
 /* ---------- formulář ---------- */
 function chips(el, items, val, cls) {
   $(el).innerHTML = items.map(i => `<button class="chip ${i === val ? (cls || 'on') : ''}" data-v="${esc(i)}">${esc(i)}</button>`).join('');
 }
-function openForm(type) {
-  const t = selDate || today();
-  const lastRole = ls.get('lastRole', {});
-  form = { type, date: t, sam: '', role: lastRole.date === t ? lastRole.role : '', ctx: '' };
-  $('#fDate').value = t; $('#fText').value = ''; $('#fReaction').value = ''; $('#fCtxOther').value = '';
-  $('#fCtxOther').classList.add('hidden');
+function openForm(type, edit) {
+  const back = view === 'form' ? form.back : view;
+  if (edit) {
+    const known = CTX.includes(edit.ctx) || !edit.ctx;
+    form = { type: edit.type, date: edit.date, sam: edit.sam, role: edit.role || '', ctx: known ? (edit.ctx || '') : 'Jinde', editId: edit.id, back };
+    $('#fDate').value = edit.date; $('#fText').value = edit.text || ''; $('#fReaction').value = edit.reaction || '';
+    $('#fCtxOther').value = known ? '' : edit.ctx;
+    $('#fCtxOther').classList.toggle('hidden', known);
+  } else {
+    const t = selDate || today();
+    const lastRole = ls.get('lastRole', {});
+    form = { type, date: t, sam: '', role: lastRole.date === t ? lastRole.role : '', ctx: '', back };
+    $('#fDate').value = t; $('#fText').value = ''; $('#fReaction').value = ''; $('#fCtxOther').value = '';
+    $('#fCtxOther').classList.add('hidden');
+  }
+  $('#fDate').max = today();
   drawForm(); show('form');
 }
 function drawForm() {
   chips('#fType', ['Ocenění', 'Feedback'], form.type, form.type === 'Feedback' ? 'onw' : 'on');
-  chips('#fSam', data.sams && data.sams.length ? data.sams : DEFAULT_SAMS, form.sam);
+  const sams = (data.sams && data.sams.length ? data.sams : DEFAULT_SAMS).slice();
+  if (form.sam && !sams.includes(form.sam)) sams.push(form.sam);
+  chips('#fSam', sams, form.sam);
   chips('#fRole', ROLES, form.role);
   chips('#fCtx', CTX, form.ctx);
-  $('#formTitle').textContent = form.type;
+  $('#formTitle').textContent = (form.editId ? 'Upravit · ' : '') + form.type;
   $('#fTextLabel').textContent = form.type === 'Ocenění' ? 'Co jsem ocenil' : 'Jaký feedback jsem dal';
   $('#formSave').className = 'btn ' + (form.type === 'Ocenění' ? 'g' : 'w');
 }
@@ -341,16 +353,18 @@ $('#formSave').onclick = () => {
   if (!form.sam) return toast('Vyber SAMa');
   const date = $('#fDate').value || today();
   const ctx = form.ctx === 'Jinde' ? ($('#fCtxOther').value.trim() || 'Jinde') : form.ctx;
-  const entry = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date, type: form.type, sam: form.sam,
+  const id = form.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const entry = { id, date, type: form.type, sam: form.sam,
     role: form.role, ctx, text: $('#fText').value.trim(), reaction: $('#fReaction').value.trim() };
-  if (form.role) ls.set('lastRole', { date, role: form.role });
+  if (form.role && !form.editId) ls.set('lastRole', { date, role: form.role });
+  if (form.editId) push({ action: 'delete', id }); // úprava = přepsání záznamu se stejným ID
   push({ action: 'add', entry });
   if (!data.shifts.includes(date)) push({ action: 'shift', date, on: true });
-  selDate = date;
-  toast(form.type + ' uloženo · ' + fmt(date));
-  render(); show('dnes');
+  toast(form.type + (form.editId ? ' upraveno · ' : ' uloženo · ') + fmt(date));
+  if (form.back === 'zaznamy') { render(); show('zaznamy'); }
+  else { selDate = date; render(); show('dnes'); }
 };
-$('#formCancel').onclick = () => show('dnes');
+$('#formCancel').onclick = () => show(form.back === 'zaznamy' ? 'zaznamy' : 'dnes');
 
 /* ---------- navigace a akce ---------- */
 function show(v) {
@@ -368,6 +382,8 @@ $('#dNext').onclick = () => shiftDay(1);
 $('#dToday').onclick = () => { selDate = today(); render(); };
 $('#dPick').onchange = ev => { if (ev.target.value) { selDate = ev.target.value; render(); } };
 document.body.addEventListener('click', ev => {
+  const ed = ev.target.closest('[data-edit]');
+  if (ed) { const en = data.entries.find(x => x.id === ed.dataset.edit); if (en) openForm(en.type, en); return; }
   const d = ev.target.closest('[data-del]');
   if (d && confirm('Smazat záznam?')) push({ action: 'delete', id: d.dataset.del });
   const f = ev.target.closest('[data-f]');
