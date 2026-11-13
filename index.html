@@ -194,8 +194,8 @@ const fmt = s => { const [y,m,d] = s.split('-').map(Number); const dt = new Date
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 const DEFAULT_SAMS = ['Báčis','Bláža','Dan P.','Fíla','Honza P.','Jáchym','Kamča','Káťa','Libor','Mára P.','Martin D.','Martin Z.','Paťas','Pepe','Táda','Tláča'];
-const ROLES = ['SAM','Maršál','Recepce'];
-const CTX = ['Gearovna','Oběd','Na dráze','Po kurzu','Recepce','Jinde'];
+const ROLES = ['SAM','SAMec','Maršál','Recepce','Pitland Leader'];
+const CTX = ['Gearovna','Oběd','Na dráze','Po kurzu','Recepce','Briefing','Debriefing','Jinde'];
 
 let data = ls.get('data', { entries: [], shifts: [], sams: DEFAULT_SAMS });
 let queue = ls.get('queue', []);
