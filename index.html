@@ -120,7 +120,7 @@ nav button.on{color:var(--g)}
   <div class="chips" id="fType"></div>
   <label class="l">Datum</label>
   <input type="date" id="fDate">
-  <label class="l">SAM</label>
+  <label class="l" id="fSamLabel">SAM · můžeš vybrat víc (skupina)</label>
   <div class="chips" id="fSam"></div>
   <label class="l">Moje pozice</label>
   <div class="chips" id="fRole"></div>
@@ -317,14 +317,14 @@ function openForm(type, edit) {
   const back = view === 'form' ? form.back : view;
   if (edit) {
     const known = CTX.includes(edit.ctx) || !edit.ctx;
-    form = { type: edit.type, date: edit.date, sam: edit.sam, role: edit.role || '', ctx: known ? (edit.ctx || '') : 'Jinde', editId: edit.id, back };
+    form = { type: edit.type, date: edit.date, sams: String(edit.sam || '').split(',').map(s => s.trim()).filter(Boolean), role: edit.role || '', ctx: known ? (edit.ctx || '') : 'Jinde', editId: edit.id, back };
     $('#fDate').value = edit.date; $('#fText').value = edit.text || ''; $('#fReaction').value = edit.reaction || '';
     $('#fCtxOther').value = known ? '' : edit.ctx;
     $('#fCtxOther').classList.toggle('hidden', known);
   } else {
     const t = selDate || today();
     const lastRole = ls.get('lastRole', {});
-    form = { type, date: t, sam: '', role: lastRole.date === t ? lastRole.role : '', ctx: '', back };
+    form = { type, date: t, sams: [], role: lastRole.date === t ? lastRole.role : '', ctx: '', back };
     $('#fDate').value = t; $('#fText').value = ''; $('#fReaction').value = ''; $('#fCtxOther').value = '';
     $('#fCtxOther').classList.add('hidden');
   }
@@ -334,8 +334,9 @@ function openForm(type, edit) {
 function drawForm() {
   chips('#fType', ['Ocenění', 'Feedback'], form.type, form.type === 'Feedback' ? 'onw' : 'on');
   const sams = (data.sams && data.sams.length ? data.sams : DEFAULT_SAMS).slice();
-  if (form.sam && !sams.includes(form.sam)) sams.push(form.sam);
-  chips('#fSam', sams, form.sam);
+  form.sams.forEach(s => { if (!sams.includes(s)) sams.push(s); });
+  $('#fSam').innerHTML = sams.map(i => `<button class="chip ${form.sams.includes(i) ? 'on' : ''}" data-v="${esc(i)}">${esc(i)}</button>`).join('');
+  $('#fSamLabel').textContent = form.sams.length > 1 ? `SAMové · vybráno ${form.sams.length} (skupina)` : 'SAM · můžeš vybrat víc (skupina)';
   chips('#fRole', ROLES, form.role);
   chips('#fCtx', CTX, form.ctx);
   $('#formTitle').textContent = (form.editId ? 'Upravit · ' : '') + form.type;
@@ -345,16 +346,21 @@ function drawForm() {
 ['#fType', '#fSam', '#fRole', '#fCtx'].forEach(sel => $(sel).addEventListener('click', ev => {
   const b = ev.target.closest('.chip'); if (!b) return;
   const key = { '#fType': 'type', '#fSam': 'sam', '#fRole': 'role', '#fCtx': 'ctx' }[sel];
-  form[key] = form[key] === b.dataset.v && key !== 'type' ? '' : b.dataset.v;
+  if (key === 'sam') {
+    const v = b.dataset.v;
+    form.sams = form.sams.includes(v) ? form.sams.filter(x => x !== v) : form.sams.concat(v);
+    return drawForm();
+  }
+  form[key] =form[key] === b.dataset.v && key !== 'type' ? '' : b.dataset.v;
   if (key === 'ctx') $('#fCtxOther').classList.toggle('hidden', form.ctx !== 'Jinde');
   drawForm();
 }));
 $('#formSave').onclick = () => {
-  if (!form.sam) return toast('Vyber SAMa');
+  if (!form.sams.length) return toast('Vyber SAMa');
   const date = $('#fDate').value || today();
   const ctx = form.ctx === 'Jinde' ? ($('#fCtxOther').value.trim() || 'Jinde') : form.ctx;
   const id = form.editId || Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const entry = { id, date, type: form.type, sam: form.sam,
+  const entry = { id, date, type: form.type, sam: form.sams.join(', '),
     role: form.role, ctx, text: $('#fText').value.trim(), reaction: $('#fReaction').value.trim() };
   if (form.role && !form.editId) ls.set('lastRole', { date, role: form.role });
   if (form.editId) push({ action: 'delete', id }); // úprava = přepsání záznamu se stejným ID
